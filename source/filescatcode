@@ -1,0 +1,1911 @@
+Makefile:
+Xspec: Xspec.o XspecMath.o XspecConv.o
+	gcc -o Xspec -I/usr/include -I/usr/X11R6/LessTif/Motif2.1/include -L/usr/lib/gcc-lib/i386-redhat-linux/2.96  -L/usr/X11R6/LessTif/Motif2.1/lib -L/usr/X11R6/lib -lXm -lXt -lX11 -lm Xspec.o XspecMath.o XspecConv.o
+
+Xspec.o: Xspec.c XspecMath.h XspecConv.h
+	gcc -I/usr/X11R6/LessTif/Motif2.1/include -L/usr/X11R6/LessTif/Motif2.1/lib -lXm -lXt -lX11 -c Xspec.c
+
+XspecMath.o: XspecMath.c
+	gcc -I/usr/include -I/usr/X11R6/LessTif/Motif2.1/include -L/usr/X11R6/LessTif/Motif2.1/lib -lXm -lXt -lX11 -c XspecMath.c
+
+XspecConv.o: XspecConv.c
+	gcc -I/usr/X11R6/LessTif/Motif2.1/include -L/usr/X11R6/LessTif/Motif2.1/lib -lXm -lXt -lX11 -c XspecConv.c
+-----------------
+Xspec.c
+/*Xspec*/
+/*Motif Curved Perspective Program*/
+/*Jon Bierce-Wilson*/
+
+#include <Xm/Xm.h>
+#include <Xm/Label.h>
+#include <Xm/PushB.h>
+#include <Xm/MainW.h>
+#include <Xm/RowColumn.h>
+#include <Xm/ToggleB.h>
+#include <Xm/MessageB.h>
+#include <Xm/BulletinB.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <Xm/FileSB.h>
+#define OK     1
+#define CANCEL 2
+#include "XspecConv.h"
+#include "XspecMath.h"
+#define UNSAVED 0
+#define SAVED   1
+#define CHANGED 2
+int saveState = UNSAVED;
+#define NOACTION   0
+#define EXITACTION 1
+#define OPENACTION 2
+int actionAfterSave = 0;
+#define Xchoice 0
+#define Ychoice 1
+#define Zchoice 2
+int XYorZ;
+
+/*void translateDialogCB(Widget , XtPointer , XtPointer );*/
+void whichAxisCB(Widget , int , XtPointer );
+XmStringCharSet char_set = XmSTRING_DEFAULT_CHARSET;
+Display* global_display;
+Window   global_window;
+GC       global_gc;
+Region   global_region = (Region) NULL;
+ Widget parent;
+ Widget mainwindow;
+ Widget menubar;
+ Widget filemenu, editmenu, optionsmenu;
+ Widget openchoice, newchoice, savechoice, appendchoice, exitchoice;
+ Widget boxeschoice, tabletchoice;
+ Widget rotatechoice, translatechoice, scalechoice;
+ Widget constantviewanglechoice, autoredrawchoice;
+ Widget drawingarea;
+ Widget dialog, row;
+ Widget openDialog;
+ Widget saveDialog;
+ Widget cantOpenDialog;
+ Widget saveQuestionDialog;
+ Widget cantAppendDialog;
+ Widget outOfMemoryDialog;
+ Widget appendDialog;
+ Widget eyeX, eyeY, eyeZ;
+ Widget viewX, viewY, viewZ;
+ Widget widthget;
+ Widget redraw;
+ Widget rotateDialog;
+ Widget translateDialog;
+ Widget scaleDialog;
+ Widget rowcol;
+ Widget changeValue;
+ Widget radiorow;
+ Widget okButton;
+ Widget cancelButton;
+ Widget radio_box;
+ Widget radio_text;
+ Widget Xbutton;
+ Widget Ybutton;
+ Widget Zbutton;
+
+ Boolean autoRedrawMode = TRUE;
+ Boolean constantViewAngle = FALSE;
+ double transformAmount;
+
+const int WINDOWSIZE=800;
+double width;    /*these are the globals that can be changed */
+point3d eye;   /*from the control window */
+point3d view;
+double widthD;  /*widthD is in degrees, width is in radians */
+
+vector upV;
+
+line  *lines;
+point3d *verts3d;
+point2d *screenVerts;
+angles *viewAngles;
+
+line  *templines;
+point3d *tempverts3d;
+
+int numlines = 0;
+int numpoints = 0;
+
+
+
+/*******************************************/
+
+void DrawTest(Display* display, Window window, GC gc)
+{
+
+ int k;
+
+ width = widthD/180*3.14;
+ for(k=0;k<numpoints;k++)
+   {
+    viewAngles[k] = findAngles(verts3d[k]);
+    screenVerts[k] = findScreenPoints(viewAngles[k]);
+   }
+ for(k=0;k<numlines;k++)
+   {
+    XDrawLine(display, window, gc, screenVerts[lines[k].from].x,
+                                   screenVerts[lines[k].from].y,
+                                   screenVerts[lines[k].to].x,
+                                   screenVerts[lines[k].to].y);
+  }
+}
+
+/*****************************************/
+
+void HandleExpose(XExposeEvent* event)
+{
+ XRectangle rectangle;
+ if (global_region == (Region) NULL)
+  {
+   global_region = XCreateRegion();
+  }
+ UnionExposeWithRegion(event, global_region);
+ if (event->count == 0)
+  {
+   ClipToRegion(global_display, global_gc, global_region);
+   XDestroyRegion(global_region);
+   global_region = (Region) NULL;
+   DrawTest(global_display, global_window, global_gc);
+   XSetClipMask(global_display, global_gc, (Pixmap) None);
+  }
+}
+
+/****************************************/
+
+void drawCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+ XmDrawingAreaCallbackStruct*  ptr;
+ ptr = (XmDrawingAreaCallbackStruct*) call_data;
+ if (ptr->reason == XmCR_EXPOSE)
+  {
+   HandleExpose((XExposeEvent*) ptr->event);
+  }
+}
+
+
+/*******************************************/
+
+static void sliderCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+ XmScaleCallbackStruct* ptr;
+ double* value;
+ ptr = (XmScaleCallbackStruct*) call_data;
+  value = (double*) client_data;
+  if (value != (double*) NULL)
+   {
+    *value = ptr->value;
+   }
+ XtSetSensitive(widget, False);
+ XmUpdateDisplay(widget);
+ if(autoRedrawMode)
+   {
+     XClearWindow(global_display, global_window);
+     DrawTest(global_display, global_window, global_gc);
+   }
+ XFlush(global_display);
+ XtSetSensitive(widget, True);
+}
+
+/****************************************/
+
+void redrawCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+ XtSetSensitive(widget, False);
+ XmUpdateDisplay(widget);
+ XClearWindow(global_display, global_window);
+ DrawTest(global_display, global_window, global_gc);
+ XFlush(global_display);
+ XtSetSensitive(widget, True);
+}
+
+/******************************************/
+
+Widget CreateControlWindow(Widget parent, char* app_name, char* app_class)
+{
+ Arg args[20];
+ int n;
+
+ dialog = CreateShell(parent, app_name, app_class, "Control Window");
+ n = 0;
+ row = XmCreateRowColumn(dialog, "row", args, n);
+
+ eyeX = CreateHSlider(row, "eyeX", -20, 20, eye.x, "Eye Position, X",
+                         (XtCallbackProc) sliderCB,
+                         (XtPointer) &(eye.x));
+
+ eyeY  = CreateHSlider(row, "eyeY", -20, 20, eye.y, "Eye Position, Y",
+                         (XtCallbackProc) sliderCB,
+                         (XtPointer) &(eye.y));
+
+ eyeZ  = CreateHSlider(row, "eyeZ", -20, 20, eye.z,"Eye Position, Z",
+                         (XtCallbackProc) sliderCB,
+                         (XtPointer) &(eye.z));
+
+ viewX  = CreateHSlider(row, "viewX", -20, 20, view.x, "Center of View, X",
+                         (XtCallbackProc) sliderCB,
+                         (XtPointer) &view.x);
+
+ viewY  = CreateHSlider(row, "viewY", -20, 20, view.y, "Center of View, Y",
+                         (XtCallbackProc) sliderCB,
+                         (XtPointer) &view.y);
+
+ viewZ  = CreateHSlider(row, "viewZ", -20, 20, view.z,"Center of View, Z",
+                         (XtCallbackProc) sliderCB,
+                         (XtPointer) &view.z);
+
+ widthget  = CreateHSlider(row, "widthget", 1, 360, widthD, "Width of View",
+                         (XtCallbackProc) sliderCB,
+                         (XtPointer) &widthD);
+
+ redraw = (Widget) CreatePushButton(row, "redraw", (XtCallbackProc) redrawCB,
+                           (XtPointer) NULL);
+ XtManageChild(row);
+ XtRealizeWidget(dialog);
+  return dialog;
+}
+
+/*************************************************************/
+
+Widget CreateTransformDialog(Widget parent,
+                             char* name,
+                             char* sliderText,
+			     char* radioText,
+                             XtCallbackProc callback,
+			     int min,
+                             int max)
+{
+  Widget widget;
+  Arg  args[20];
+  int  n;
+
+  n = 0;
+  XtSetArg(args[n],XmNautoUnmanage,False); n++;
+  widget = XmCreateBulletinBoardDialog(parent, name,args,n);
+  n = 0;
+  XtSetArg(args[n],XmNx,10); n++;
+  XtSetArg(args[n],XmNy,10); n++;
+  rowcol = XmCreateRowColumn(widget,"rowcol",args,n);
+  XtManageChild(rowcol);
+  changeValue = CreateHSlider(rowcol,"changeValue",min,max,(max-min)/2,sliderText,
+			      (XtCallbackProc) sliderCB, (XtPointer) &transformAmount);
+  n = 0;
+  radiorow = XmCreateRowColumn(rowcol,"radiorow",args,n);
+  XtManageChild(radiorow);
+  n = 0;
+  radio_box = XmCreateRadioBox(radiorow,"radio_box",args,n);
+  XtManageChild(radio_box);
+  Xbutton = CreateToggleButton(radio_box,"Xbutton",whichAxisCB,Xchoice);
+  Ybutton = CreateToggleButton(radio_box,"Ybutton",whichAxisCB,Ychoice);
+  Zbutton = CreateToggleButton(radio_box,"Zbutton",whichAxisCB,Zchoice);
+  n = 0;
+  XtSetArg(args[n],XmNlabelString,XmStringCreateLtoR(radioText,char_set)); n++;
+  radio_text = XmCreateLabel(radiorow,"radio_text",args,n);
+  XtManageChild(radio_text);
+  okButton = CreatePushButton(rowcol,"okButton",callback,(XtPointer)OK);
+  cancelButton = CreatePushButton(rowcol,"cancelButton",callback,(XtPointer)CANCEL);
+  return widget;
+}
+/*************************************************************/
+void openCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+ if (numpoints!=0 && saveState!= SAVED)
+   {
+     actionAfterSave = OPENACTION;
+     XtManageChild(saveQuestionDialog);
+   }
+ else
+   {
+     XtManageChild(openDialog);
+   }
+}
+/*************************************************************/
+void saveCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+ XtManageChild(saveDialog);
+}
+/*************************************************************/
+void appendCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+  if (numpoints == 0)
+   XtManageChild(cantAppendDialog);
+ else
+   XtManageChild(appendDialog);
+}
+/******************************************/
+void exitCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+ if (numpoints!=0 && saveState!= SAVED)
+   {
+     actionAfterSave = EXITACTION;
+     XtManageChild(saveQuestionDialog);
+   }
+ else
+   {
+     exit(0);
+   }
+}
+/*************************************************************/
+void boxesCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+  /*XtManageChild(boxesDialog);*/
+}
+/*************************************************************/
+void tabletCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+  /*XtManageChild(tabletDialog);*/
+}
+/*************************************************************/
+void rotateCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+ XtManageChild(rotateDialog);
+}
+/*************************************************************/
+void translateCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+ XtManageChild(translateDialog);
+}
+/*************************************************************/
+void scaleCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+ XtManageChild(scaleDialog);
+}
+
+/*************************************************************/
+void openDialogCB(Widget widget, int client_data,
+                  XmSelectionBoxCallbackStruct *call_data)
+{
+ char *filename;
+ FILE *fileIn;
+ register int i;
+ char *cookie;
+
+ switch(client_data)
+   {
+   case OK:
+     XmStringGetLtoR(call_data->value, char_set, &filename);
+     fileIn = fopen(filename, "r");
+     if (!fileIn) { XtManageChild(cantOpenDialog); break;}
+/*     (void)fgets(cookie,12,fileIn);
+     cookie[strlen(cookie)-1] = '\0';
+     if(strcmp(cookie,"XspecFile")) {printf("No cookie"); exit(1);}
+*/
+     (void)fscanf(fileIn, " %d", &numpoints);
+     tempverts3d= calloc(numpoints, sizeof(point3d));
+     if (!tempverts3d)
+       {
+	 XtManageChild(outOfMemoryDialog);
+	 break;
+      }
+     screenVerts= calloc(numpoints, sizeof(point2d));
+     if (!screenVerts)
+       {
+	 XtManageChild(outOfMemoryDialog);
+	 break;
+      }
+     viewAngles= calloc(numpoints, sizeof(angles));
+     if (!viewAngles)
+       {
+	 XtManageChild(outOfMemoryDialog);
+	 break;
+      }
+
+     for (i=0;i<numpoints;i++)
+       {
+	 (void)fscanf(fileIn, " %lf %lf %lf", &tempverts3d[i].x,
+                                              &tempverts3d[i].y,
+                                              &tempverts3d[i].z);
+       }
+     verts3d = tempverts3d;
+     (void)fscanf(fileIn," %d", &numlines);
+     templines = calloc(numlines, sizeof(line));
+     if (!templines)
+       {
+	 XtManageChild(outOfMemoryDialog);
+	 break;
+      }
+
+     for (i=0;i<numlines;i++)
+       {
+	 (void)fscanf(fileIn," %d %d", &templines[i].from, &templines[i].to);
+       }
+     lines = templines;
+     fclose(fileIn);
+     saveState = SAVED;
+     break;
+   case CANCEL:
+     break;
+   }
+ XtUnmanageChild(openDialog);
+ actionAfterSave = NOACTION;
+ XClearArea(global_display,global_window,0,0,0,0,FALSE);
+ DrawTest(global_display, global_window, global_gc);
+}
+
+/*************************************************************/
+void saveDialogCB(Widget widget, int client_data,
+                  XmSelectionBoxCallbackStruct *call_data)
+{
+ char *filename;
+ FILE *fileOut;
+ register int i;
+ char *cookie;
+
+ switch(client_data)
+   {
+   case OK:
+     XmStringGetLtoR(call_data->value, char_set, &filename);
+     fileOut = fopen(filename, "w");
+     if(!fileOut) { XtManageChild(cantOpenDialog); break;}
+     (void) fprintf(fileOut, " %d\n", numpoints);
+     for (i=0;i<numpoints;i++)
+       {
+	 (void) fprintf(fileOut, " %lf %lf %lf\n", verts3d[i].x, verts3d[i].y, verts3d[i].z);
+       }
+     (void) fprintf(fileOut," %d\n", numlines);
+     for (i=0;i<numlines;i++)
+       {
+	 fprintf(fileOut," %d %d\n", lines[i].from, lines[i].to);
+       }
+     fclose(fileOut);
+     saveState = SAVED;
+     break;
+   case CANCEL:
+     break;
+   }
+ XtUnmanageChild(saveDialog);
+ if (actionAfterSave == EXITACTION) {exit(0);}
+ else if (actionAfterSave == OPENACTION)
+   {
+     XtManageChild(openDialog);
+   }
+}
+/*************************************************************/
+void appendDialogCB(Widget widget, int client_data,
+                  XmSelectionBoxCallbackStruct *call_data)
+{
+ char *filename;
+ FILE *fileIn;
+ register int i;
+ char *cookie;
+ int numpoints2;
+ int numlines2;
+
+ switch(client_data)
+   {
+   case OK:
+	 XmStringGetLtoR(call_data->value, char_set, &filename);
+	 fileIn = fopen(filename, "r");
+	 if (!fileIn) { XtManageChild(cantOpenDialog); break;}
+
+	 /*allocate verts3d*/
+	 verts3d= calloc(numpoints, sizeof(point3d));
+	 if (!verts3d)
+	   {
+	     XtManageChild(outOfMemoryDialog);
+	     break;
+	   }
+	 for(i=0;i<numpoints;i++)
+	   {
+	     verts3d[i].x = tempverts3d[i].x;
+	     verts3d[i].y = tempverts3d[i].y;
+	     verts3d[i].z = tempverts3d[i].z;
+	   }
+	 free(tempverts3d);
+         (void) fscanf(fileIn, " %d", &numpoints2);
+	 tempverts3d = calloc((numpoints+numpoints2), sizeof(point3d));
+	 if (!tempverts3d)
+	   {
+	     XtManageChild(outOfMemoryDialog);
+	     break;
+	   }
+	 for (i=0;i<numpoints2;i++)
+	   {
+	     (void) fscanf(fileIn, " %lf %lf %lf",   &tempverts3d[i].x,
+                                  &tempverts3d[i].y, &tempverts3d[i].z);
+	   }
+	 for(i=0;i<numpoints;i++)
+	   {
+	     tempverts3d[numpoints2+i].x = verts3d[i].x;
+	     tempverts3d[numpoints2+i].y = verts3d[i].y;
+	     tempverts3d[numpoints2+i].z = verts3d[i].z;
+	   }
+	 free(verts3d);
+	 verts3d = tempverts3d;
+	 numpoints += numpoints2;
+
+	 /*allocate screenVerts and viewAngles*/
+	 free(screenVerts);
+	 screenVerts= calloc(numpoints, sizeof(point2d));
+	 if (!screenVerts)
+	   {
+	     XtManageChild(outOfMemoryDialog);
+	     break;
+	   }
+
+	 free(viewAngles);
+	 viewAngles= calloc(numpoints, sizeof(angles));
+	 if (!viewAngles)
+	   {
+	     XtManageChild(outOfMemoryDialog);
+	     break;
+	   }
+
+	 /*allocate lines*/
+	 lines= calloc(numlines, sizeof(line));
+	 if (!lines)
+	   {
+	     XtManageChild(outOfMemoryDialog);
+	     break;
+	   }
+
+	 for(i=0;i<numlines;i++)
+	   {
+	     lines[i].from = templines[i].from;
+	     lines[i].to = templines[i].to;
+	   }
+	 free(templines);
+         (void) fscanf(fileIn, " %d", &numlines2);
+	 templines = calloc((numlines+numlines2), sizeof(line));
+	 if(!templines)
+	   {
+	     XtManageChild(outOfMemoryDialog);
+	     break;
+	   }
+
+	 for (i=0;i<numlines2;i++)
+	   {
+	     (void) fscanf(fileIn," %d %d", &templines[i].from, &templines[i].to);
+	   }
+	 for(i=0;i<numlines;i++)
+	   {
+	     templines[numlines2+i].from = lines[i].from + numpoints2;
+	     templines[numlines2+i].to = lines[i].to + numpoints2;
+	   }
+	 free(lines);
+	 lines = templines;
+	 numlines += numlines2;
+
+
+	 fclose(fileIn);
+	 saveState = UNSAVED;
+     break;
+   case CANCEL:
+     break;
+   }
+ XtUnmanageChild(appendDialog);
+ DrawTest(global_display, global_window, global_gc);
+
+}
+/*************************************************************/
+
+void whichAxisCB(Widget widget, int client_data, XtPointer call_data)
+{
+  Boolean set;
+  Arg args[10];
+  int n;
+
+  n = 0;
+  XtSetArg(args[n],XmNset,&set); n++;
+  XtGetValues (widget,args,n);
+  if(set)
+     XYorZ = client_data;
+}
+/*************************************************************/
+
+void scaleDialogCB(Widget widget, int client_data, XtPointer call_data)
+{
+  int k;
+  double transform;
+
+    switch (client_data)
+      {
+      case OK:
+	transform = transformAmount/100;
+        if(XYorZ == Xchoice)
+          for(k=0;k<numpoints;k++)
+            verts3d[k].x *= transform;
+        else if(XYorZ == Ychoice)
+          for(k=0;k<numpoints;k++)
+            verts3d[k].y *= transform;
+        else if(XYorZ == Zchoice)
+          for(k=0;k<numpoints;k++)
+            verts3d[k].z *= transform;
+	break;
+      case CANCEL:
+        break;
+      }
+    XtUnmanageChild(scaleDialog);
+    XClearArea(global_display,global_window,0,0,0,0,FALSE);
+    DrawTest(global_display, global_window, global_gc);
+    saveState = CHANGED;
+}
+
+/*************************************************************/
+
+void translateDialogCB(Widget widget, int client_data, XtPointer call_data)
+{
+  int k;
+
+    switch (client_data)
+     {
+     case OK:
+	if(XYorZ == Xchoice)
+	  for(k=0;k<numpoints;k++)
+	    verts3d[k].x += transformAmount;
+	else if(XYorZ == Ychoice)
+	  for(k=0;k<numpoints;k++)
+	    verts3d[k].y += transformAmount;
+	else if(XYorZ == Zchoice)
+	  for(k=0;k<numpoints;k++)
+	    verts3d[k].z += transformAmount;
+	break;
+      case CANCEL:
+        break;
+     }
+    XtUnmanageChild(translateDialog);
+    XClearArea(global_display,global_window,0,0,0,0,FALSE);
+    DrawTest(global_display, global_window, global_gc);
+    saveState = CHANGED;
+}
+
+/*************************************************************/
+
+void rotateDialogCB(Widget widget, int client_data, XtPointer call_data)
+{
+  int k;
+  double angleRad;
+  double temp;
+    switch (client_data)
+      {
+      case OK:
+	angleRad = transformAmount*3.14/180;
+    if(XYorZ == Xchoice)
+      for(k=0;k<numpoints;k++)
+	{
+        temp = verts3d[k].y*cos(angleRad) - verts3d[k].z*sin(angleRad);
+        verts3d[k].z = verts3d[k].y*sin(angleRad) + verts3d[k].z*cos(angleRad);
+	verts3d[k].y = temp;
+	}
+    else if(XYorZ == Ychoice)
+      for(k=0;k<numpoints;k++)
+	{
+        temp = verts3d[k].x*cos(angleRad) + verts3d[k].z*sin(angleRad);
+        verts3d[k].z = verts3d[k].x*-sin(angleRad) + verts3d[k].z*cos(angleRad);
+	verts3d[k].x = temp;
+}
+    else if(XYorZ == Zchoice)
+      for(k=0;k<numpoints;k++)
+	{
+        temp = verts3d[k].x*cos(angleRad) - verts3d[k].y*sin(angleRad);
+        verts3d[k].y = verts3d[k].x*sin(angleRad) + verts3d[k].y*cos(angleRad);
+	verts3d[k].x = temp;
+	}
+	break;
+      case CANCEL:
+        break;
+      }
+    XtUnmanageChild(rotateDialog);
+    XClearArea(global_display,global_window,0,0,0,0,FALSE);
+    DrawTest(global_display, global_window, global_gc);
+    saveState = CHANGED;
+}
+
+/*************************************************************/
+
+void saveQuestionDialogCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+  switch ((int) client_data)
+    {
+    case OK:
+      XtUnmanageChild(saveQuestionDialog);
+      XtManageChild(saveDialog);
+      break;
+    case CANCEL:
+      XtUnmanageChild(saveQuestionDialog);
+      if(actionAfterSave == EXITACTION)
+	exit(0);
+      else if(actionAfterSave == OPENACTION)
+	XtManageChild(openDialog);
+      break;
+    }
+}
+
+/************************************************************/
+
+void outOfMemoryDialogCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+ XtUnmanageChild(outOfMemoryDialog);
+}
+
+/************************************************************/
+
+void cantOpenDialogCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+ XtUnmanageChild(cantOpenDialog);
+}
+
+/************************************************************/
+
+ void cantAppendDialogCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+ XtUnmanageChild(cantAppendDialog);
+}
+
+/************************************************************/
+
+ void autoRedrawCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+  Boolean set;
+  Arg args[20];
+  int n;
+
+  n = 0;
+  XtSetArg(args[n],XmNset,&set); n++;
+  XtGetValues(widget,args,n);
+  if(set)
+    autoRedrawMode = TRUE;
+  else
+    autoRedrawMode = FALSE;
+}
+/************************************************************/
+
+ void constantViewAngleCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+  Boolean set;
+  Arg args[20];
+  int n;
+
+  n = 0;
+  XtSetArg(args[n],XmNset,&set); n++;
+  XtGetValues(widget,args,n);
+  if(set)
+    constantViewAngle = TRUE;
+  else
+    constantViewAngle = FALSE;
+}
+/************************************************************/
+int main(int argc, char** argv)
+{
+ XtAppContext app_context;
+ Arg    args[20];
+ int    n;
+ int screen;
+
+
+String fallback_resources []=
+  {
+    "*background:       lightgrey",
+    "*drawingarea.background: white",
+    "*fontlist: lucidasans-12",
+    "*filemenu.labelString: File",
+    "*filemenu.mnemonic:  F",
+    "*editmenu.labelString: Edit",
+    "*editmenu.mnemonic:  E",
+    "*openchoice.labelString:  Open",
+    "*openchoice.mnemonic:  O",
+    "*newchoice.labelString:  New",
+    "*newchoice.mnemonic:  N",
+    "*savechoice.labelString:  Save",
+    "*savechoice.mnemonic:  S",
+    "*appendchoice.labelString:  Append",
+    "*appendchoice.mnemonic:  A",
+    "*exitchoice.labelString:  Exit",
+    "*exitchoice.mnemonic:  x",
+    "*boxeschoice.labelString: Boxes",
+    "*boxeschoice.mnemonic:  B",
+    "*tabletchoice.labelString:  Graphic Tablet",
+    "*tabletchoice.mnemonic:  G",
+    "*rotatechoice.labelString:  Rotate",
+    "*rotatechoice.mnemonic:  R",
+    "*translatechoice.labelString:  Translate",
+    "*translatechoice.mnemonic:  T",
+    "*scalechoice.labelString:  Scale",
+    "*scalechoice.mnemonic:  c",
+    "*optionsmenu.labelString:  Options",
+    "*optionsmenu.mnemonic:  p",
+    "*autoredrawchoice.labelString:  Auto Redraw Mode",
+    "*autoredrawchoice.mnemonic:  u",
+    "*constantviewanglechoice.labelString:  Constant Viewangle Mode",
+    "*choice.mnemonic:  V",
+    NULL
+  };
+
+ upV.x = 0;
+ upV.y = 1;
+ upV.z = 0;
+ eye.x = 2;
+ eye.y = 1;
+ eye.z = -6;
+ view.x =5;
+ view.y =5;
+ view.z =0;
+  widthD = 180;
+
+ n = 0;
+ XtSetArg(args[n], XmNwinGravity, NorthEastGravity); n++;
+ XtSetArg(args[n], XmNmappedWhenManaged, False); n++;
+ XtSetArg(args[n], XmNallowResize, False); n++;
+ XtSetArg(args[n], XmNwidth, WINDOWSIZE); n++;
+ XtSetArg(args[n], XmNheight, WINDOWSIZE); n++;
+ XtSetArg(args[n], XmNtitle, "Xspec Main Window"); n++;
+ parent = XtAppInitialize(&app_context, "ProX", (XrmOptionDescList) NULL,
+                          0, &argc, argv, fallback_resources, args, n);
+ n = 0;
+ XtSetArg(args[n], XmNmappedWhenManaged, True); n++;
+ mainwindow = XmCreateMainWindow(parent, "main", args, n);
+ n = 0;
+ menubar = XmCreateMenuBar(mainwindow, "menubar", args, n);
+ XtManageChild(menubar);
+ filemenu = CreateMenu(menubar, "filemenu");
+ editmenu = CreateMenu(menubar, "editmenu");
+ optionsmenu = CreateMenu(menubar, "optionsmenu");
+ openchoice = CreateMenuChoice(filemenu, "openchoice", (XtCallbackProc) openCB,
+                              (XtPointer) NULL);
+ newchoice = CreateMenu(filemenu, "newchoice");
+ savechoice = CreateMenuChoice(filemenu, "savechoice", (XtCallbackProc) saveCB,
+                              (XtPointer) NULL);
+ appendchoice = CreateMenuChoice(filemenu, "appendchoice", (XtCallbackProc) appendCB,
+                              (XtPointer) NULL);
+ exitchoice = CreateMenuChoice(filemenu, "exitchoice", (XtCallbackProc) exitCB,
+                              (XtPointer) NULL);
+ boxeschoice = CreateMenuChoice(newchoice, "boxeschoice", (XtCallbackProc) boxesCB,
+                              (XtPointer) NULL);
+ tabletchoice = CreateMenuChoice(newchoice, "tabletchoice", (XtCallbackProc) tabletCB,
+                              (XtPointer) NULL);
+ rotatechoice = CreateMenuChoice(editmenu, "rotatechoice", (XtCallbackProc) rotateCB,
+                              (XtPointer) NULL);
+ translatechoice = CreateMenuChoice(editmenu, "translatechoice", (XtCallbackProc) translateCB,
+                              (XtPointer) NULL);
+ scalechoice = CreateMenuChoice(editmenu, "scalechoice", (XtCallbackProc) scaleCB,
+                              (XtPointer) NULL);
+ autoredrawchoice = CreateToggleButton(optionsmenu, "autoredrawchoice",
+				       (XtCallbackProc) autoRedrawCB,
+				       NULL);
+ constantviewanglechoice = CreateToggleButton(optionsmenu, "constantviewanglechoice",
+					      (XtCallbackProc) constantViewAngleCB,
+					      NULL);
+ n = 0;
+ XtSetArg(args[n],XmNvisibleWhenOff,TRUE);
+ XtSetArg(args[n],XmNset,autoRedrawMode);
+ XtSetValues(autoredrawchoice,args,n);
+ n = 0;
+ XtSetArg(args[n],XmNvisibleWhenOff,TRUE);
+ XtSetArg(args[n],XmNset,constantViewAngle);
+ XtSetValues(constantviewanglechoice,args,n);
+
+
+ drawingarea = CreateDrawingArea(mainwindow, "drawingarea", 640, 480,
+                                (XtCallbackProc) drawCB, (XtPointer) NULL);
+
+ /*create the dialogs*/
+ dialog = CreateControlWindow(parent, argv[0], "ProX");
+ n = 0;
+  XtSetArg(args[n], XmNdialogTitle, XmStringCreateLtoR("Xspec: OPEN",char_set)); n++;
+  XtSetArg(args[n],XmNpattern,XmStringCreateLtoR("*.xsp",char_set));  n++;
+  XtSetArg(args[n],XmNdirectory,XmStringCreateLtoR("~/motif",char_set));  n++;
+ openDialog = XmCreateFileSelectionDialog(parent, "openDialog", args, n);
+  XtAddCallback(openDialog, XmNokCallback, openDialogCB, OK);
+  XtAddCallback(openDialog, XmNcancelCallback, openDialogCB, CANCEL);
+  XtUnmanageChild(XmSelectionBoxGetChild(openDialog, XmDIALOG_HELP_BUTTON));
+ n = 0;
+  XtSetArg(args[n], XmNdialogTitle, XmStringCreateLtoR("Xspec: SAVE",char_set)); n++;
+  XtSetArg(args[n],XmNpattern,XmStringCreateLtoR("*.xsp",char_set));  n++;
+  XtSetArg(args[n],XmNdirectory,XmStringCreateLtoR("~/motif",char_set));  n++;
+ saveDialog = XmCreateFileSelectionDialog(parent, "saveDialog", args, n);
+  XtAddCallback(saveDialog, XmNokCallback, saveDialogCB, OK);
+  XtAddCallback(saveDialog, XmNcancelCallback, saveDialogCB, CANCEL);
+  XtUnmanageChild(XmSelectionBoxGetChild(saveDialog, XmDIALOG_HELP_BUTTON));
+ n = 0;
+  XtSetArg(args[n], XmNdialogTitle, XmStringCreateLtoR("Xspec: APPEND",char_set)); n++;
+  XtSetArg(args[n],XmNpattern,XmStringCreateLtoR("*.xsp",char_set));  n++;
+  XtSetArg(args[n],XmNdirectory,XmStringCreateLtoR("~/motif",char_set));  n++;
+ appendDialog = XmCreateFileSelectionDialog(parent, "appendDialog", args, n);
+  XtAddCallback(appendDialog, XmNokCallback, appendDialogCB, OK);
+  XtAddCallback(appendDialog, XmNcancelCallback, appendDialogCB, CANCEL);
+  XtUnmanageChild(XmSelectionBoxGetChild(appendDialog, XmDIALOG_HELP_BUTTON));
+ n = 0;
+  XtSetArg(args[n], XmNdialogTitle, XmStringCreateLtoR("Xspec: ?",char_set)); n++;
+  XtSetArg(args[n],XmNcancelLabelString,XmStringCreateLtoR("No",char_set));  n++;
+  XtSetArg(args[n],XmNokLabelString,XmStringCreateLtoR("Yes",char_set));  n++;
+  XtSetArg(args[n],XmNmessageString,XmStringCreateLtoR("Save current shape?",char_set));  n++;
+ saveQuestionDialog = XmCreateMessageDialog(parent, "saveQuestionDialog", args, n);
+  XtAddCallback(saveQuestionDialog, XmNokCallback, saveQuestionDialogCB, OK);
+  XtAddCallback(saveQuestionDialog, XmNcancelCallback, saveQuestionDialogCB, CANCEL);
+  XtUnmanageChild(XmMessageBoxGetChild(saveQuestionDialog, XmDIALOG_HELP_BUTTON));
+ n = 0;
+  XtSetArg(args[n], XmNdialogTitle, XmStringCreateLtoR("Xspec: !",char_set)); n++;
+  XtSetArg(args[n],XmNmessageString,XmStringCreateLtoR("Unable to allocate memory",char_set));  n++;
+ outOfMemoryDialog = XmCreateMessageDialog(parent, "outOfMemoryDialog", args, n);
+  XtAddCallback(outOfMemoryDialog, XmNokCallback, outOfMemoryDialogCB, OK);
+  XtUnmanageChild(XmMessageBoxGetChild(outOfMemoryDialog, XmDIALOG_HELP_BUTTON));
+  XtUnmanageChild(XmMessageBoxGetChild(outOfMemoryDialog, XmDIALOG_CANCEL_BUTTON));
+ n = 0;
+  XtSetArg(args[n], XmNdialogTitle, XmStringCreateLtoR("Xspec: !",char_set)); n++;
+  XtSetArg(args[n],XmNmessageString,XmStringCreateLtoR("Unable to open file",char_set));  n++;
+ cantOpenDialog = XmCreateMessageDialog(parent, "cantOpenDialog", args, n);
+  XtAddCallback(cantOpenDialog, XmNokCallback, cantOpenDialogCB, OK);
+  XtUnmanageChild(XmMessageBoxGetChild(cantOpenDialog, XmDIALOG_HELP_BUTTON));
+  XtUnmanageChild(XmMessageBoxGetChild(cantOpenDialog, XmDIALOG_CANCEL_BUTTON));
+  n = 0;
+   XtSetArg(args[n], XmNdialogTitle, XmStringCreateLtoR("Xspec: !",char_set)); n++;
+   XtSetArg(args[n],XmNmessageString,XmStringCreateLtoR("No open file to append to, use OPEN",
+                                                        char_set));  n++;
+  cantAppendDialog = XmCreateMessageDialog(parent, "cantAppendDialog", args, n);
+   XtAddCallback(cantAppendDialog, XmNokCallback, cantAppendDialogCB, OK);
+   XtUnmanageChild(XmMessageBoxGetChild(cantAppendDialog, XmDIALOG_HELP_BUTTON));
+   XtUnmanageChild(XmMessageBoxGetChild(cantAppendDialog, XmDIALOG_CANCEL_BUTTON));
+
+  scaleDialog = CreateTransformDialog(parent,"scaleDialog","Scale percent",
+				      "along which axis?",
+				      scaleDialogCB,1,500);
+
+  rotateDialog = CreateTransformDialog(parent,"rotateDialog","Rotation angle (degrees)",
+				       "around which axis?",
+				       rotateDialogCB,-180,180);
+  translateDialog = CreateTransformDialog(parent,"translateDialog","Translation distance",
+					  "along which axis?",
+					  translateDialogCB,-20,20);
+
+
+ XmMainWindowSetAreas(mainwindow, menubar, (Widget) NULL,
+                      (Widget) NULL, (Widget) NULL, drawingarea);
+ XtManageChild(mainwindow);
+ XtRealizeWidget(parent);
+ global_display = XtDisplay(drawingarea);
+ global_window = XtWindow(drawingarea);
+ screen = DefaultScreen(global_display);
+ global_gc = XCreateGC(global_display, global_window, 0L, (XGCValues*) NULL);
+ XSetForeground(global_display, global_gc,
+               BlackPixel(global_display, screen));
+ XtMapWidget(parent);
+ XtAppMainLoop(app_context);
+ return 0;
+}
+
+-------------------------------
+XspecConv.c
+/********************************/
+/* XspecConv.c */
+/* convenience functions for Xspec, a motif curved */
+/* perspective drawing program */
+/* Jon Bierce-Wilson */
+
+
+#include <Xm/Xm.h>
+#include "XspecConv.h"
+#include <Xm/CascadeB.h>
+#include <Xm/PushB.h>
+#include <Xm/ToggleB.h>
+#include <Xm/RowColumn.h>
+#include <Xm/DrawingA.h>
+#include <X11/Shell.h>
+#include <Xm/Scale.h>
+extern XmStringCharSet char_set;
+
+/********************************/
+
+Widget CreateMenu(Widget parent, char* name)
+{
+ Widget cascade;
+ Widget menuwidget;
+ Arg args[20];
+ int n;
+
+ n = 0;
+ menuwidget = XmCreatePulldownMenu(parent, name, args, n);
+ n = 0;
+ XtSetArg(args[n], XmNsubMenuId, menuwidget); n++;
+ cascade = XmCreateCascadeButton(parent, name, args, n);
+ XtManageChild(cascade);
+ return menuwidget;
+}
+
+/*****************************************/
+Widget CreateToggleButton(Widget parent, char* name,
+                        XtCallbackProc callback,
+                        int client_data)
+
+{
+ Widget button;
+ Arg args[20];
+ int n;
+
+ n = 0;
+ button = XmCreateToggleButton(parent, name, args, n);
+ XtManageChild(button);
+ XtAddCallback(button, XmNvalueChangedCallback, callback, client_data);
+ return button;
+}
+
+/*****************************************/
+Widget CreatePushButton(Widget parent, char* name,
+                        XtCallbackProc callback,
+                        XtPointer client_data)
+
+{
+ Widget button;
+ Arg args[20];
+ int n;
+
+ n = 0;
+ button = XmCreatePushButton(parent, name, args, n);
+ XtManageChild(button);
+ XtAddCallback(button, XmNactivateCallback, callback, client_data);
+ return button;
+}
+/******************************************/
+
+Widget CreateMenuChoice(Widget parent, char* name,
+                        XtCallbackProc callback,
+                        XtPointer client_data)
+
+{
+ return CreatePushButton(parent, name, callback, client_data);
+}
+/**********************************************/
+
+Widget CreateDrawingArea(Widget parent, char* name, int width, int height,
+                         XtCallbackProc callback, XtPointer client_data)
+{
+ Widget widget;
+ Arg args[20];
+ int n;
+
+ n = 0;
+ XtSetArg(args[n], XmNwidth, width); n++;
+ XtSetArg(args[n], XmNheight, height); n++;
+ XtSetArg(args[n], XmNallowResize, True); n++;
+ widget = XmCreateDrawingArea(parent, name, args, n);
+ XtManageChild(widget);
+ XtAddCallback(widget, XmNresizeCallback, callback, client_data);
+ XtAddCallback(widget, XmNinputCallback, callback, client_data);
+ XtAddCallback(widget, XmNexposeCallback, callback, client_data);
+ return widget;
+}
+
+/*****************************************************/
+
+void UnionExposeWithRegion(XExposeEvent* event, Region region)
+{
+ XRectangle rectangle;
+ rectangle.x = event->x;
+ rectangle.y = event->y;
+ rectangle.width = event->width;
+ rectangle.height = event->height;
+ XUnionRectWithRegion(&rectangle, region, region);
+}
+
+/*********************************************************/
+
+void ClipToRegion(Display* display, GC gc, Region region)
+{
+ XRectangle rectangle;
+#define CLIP_REGIONS
+#ifdef CLIP_REGIONS
+ XSetRegion(display, gc, region);
+#else
+ XClipBox(region, &rectangle);
+ XSetClipRectangles(display, gc, 0, 0, &rectangle, 1, YXBanded);
+#endif
+}
+
+/********************************************************/
+
+Widget CreateShell(Widget parent, char* app_name, char* app_class, char* title)
+{
+ Widget widget;
+ Arg args[20];
+ int n;
+
+ n = 0;
+ XtSetArg(args[n], XmNwinGravity, NorthWestGravity); n++;
+ XtSetArg(args[n], XmNtitle, title); n++;
+ XtSetArg(args[n], XmNminWidth, 200 ); n++;
+ XtSetArg(args[n], XmNtransientFor, parent); n++;
+ XtSetArg(args[n], XmNallowShellResize, True); n++;
+ widget = XtAppCreateShell(app_name, app_class, topLevelShellWidgetClass,
+                           XtDisplay(parent), args, n);
+ return widget;
+}
+
+/*********************************************************/
+
+Widget CreateHSlider(Widget parent, char* name, int minimum, int maximum,
+                     int init, char* title, XtCallbackProc callback,
+                     XtPointer client_data)
+
+{
+ Widget widget;
+ Arg args[20];
+ int n;
+ XmString xmstring;
+
+ n = 0;
+ XtSetArg(args[n], XmNorientation, XmHORIZONTAL); n++;
+ XtSetArg(args[n], XmNprocessingDirection, XmMAX_ON_RIGHT); n++;
+ XtSetArg(args[n], XmNmaximum, maximum); n++;
+ XtSetArg(args[n], XmNminimum, minimum); n++;
+ XtSetArg(args[n], XmNshowValue, True); n++;
+ XtSetArg(args[n], XmNscaleMultiple, 1); n++;
+ xmstring = XmStringCreateSimple(title);
+ XtSetArg(args[n], XmNtitleString, xmstring); n++;
+ widget = XmCreateScale(parent, name, args, n);
+ XmScaleSetValue(widget, init);
+ XmStringFree(xmstring);
+ XtAddCallback(widget, XmNvalueChangedCallback, callback, client_data);
+ XtManageChild(widget);
+ return widget;
+}
+
+/*************************************************************/
+------------------------------
+XspecMath.c
+/******************************************/
+/*XspecMath.c                              */
+/*******************************************/
+
+#include <stdio.h>
+#include <math.h>
+#include "XspecConv.h"
+/****************************************/
+extern double width;    /*these are the globals that can be changed */
+extern point3d eye;   /*from the control window */
+extern point3d view;
+extern double widthD;  /*widthD is in degrees, width is in radians */
+
+extern vector upV;
+extern line  *lines;
+extern point3d *verts3d;
+extern point2d *screenVerts;
+extern angles *viewAngles;
+
+extern constantViewAngle;
+extern int numlines;
+extern int numpoints;
+extern const int WINDOWSIZE;
+
+/****************************************/
+/*returns the dot product of two vectors  */
+
+double dotP(vector A, vector B)
+{
+ double result;
+ result = A.x*B.x + A.y*B.y + A.z*B.z;
+ return result;
+}
+
+/****************************************/
+/*returns the cross product of two vectors  */
+
+vector crossP(vector A, vector B)
+{
+ vector result;
+ result.x = A.y*B.z - A.z*B.y;
+ result.y = A.z*B.x - A.x*B.z;
+ result.z = A.x*B.y - A.y*B.x;
+ return result;
+}
+
+/*******************************************/
+/*returns the angle between two vectors- the inverse cos of */
+/*their dot product over the product of their magnitudes */
+
+double angleBetweenVectors (vector A, vector B)
+{
+ double dotprod, magA, magB;
+ double prod, cosVal;
+ dotprod = dotP(A,B);
+ magA = sqrt((A.x*A.x) + (A.y*A.y) + (A.z*A.z));
+ magB = sqrt((B.x*B.x) + (B.y*B.y) + (B.z*B.z));
+ prod = magA*magB;
+ if (prod == 0) prod = 0.001;
+ cosVal = (dotprod/(prod));
+ if (cosVal >= 1)
+   {
+    return 0;
+  }
+ else if (cosVal <= -1)
+   {
+    return 3.1415;
+  }
+ else
+   {
+    return acos (cosVal);
+  }
+}
+
+/********************************************/
+/*boolean function, returns true if the tip of p is on the opposite side  */
+/*of the plane (to which v is a normal) from the tip of v  */
+
+int oppositeSide(vector p, vector v)
+{
+ double t, denominator;
+ denominator = v.x*v.x + v.y*v.y + v.z*v.z;
+ if (denominator == 0) denominator = 0.001;
+ t = (v.x*(-p.x) + v.y*(-p.y) + v.z*(-p.z))
+    /denominator;
+ return (t<0);       /*if t<0 then the point is on the opposite side*/
+}
+
+/********************************************/
+/*given 3D point, returns the theta and phi of the view from the global 'eye' */
+
+angles findAngles(point3d point)
+{
+ angles result;
+ point3d right;
+ vector viewPlaneV, pointPlaneV;
+ vector viewV, pointV;
+
+if(constantViewAngle)
+  {
+ viewV.x = (view.x);
+ viewV.y = (view.y);
+ viewV.z = (view.z);
+  }
+else
+  {
+ viewV.x = (view.x-eye.x);
+ viewV.y = (view.y-eye.y);
+ viewV.z = (view.z-eye.z);
+  }
+ /*set up default views if view=eye or if view straight up*/
+ if (viewV.x == 0 && viewV.y == 0)
+   {
+    if (viewV.y == 0)
+      {
+	viewV.y = 1;
+      }
+     upV.x = 1;
+   }
+ else upV.x = 0;
+ pointV.x = (point.x-eye.x);
+ pointV.y = (point.y-eye.y);
+ pointV.z = (point.z-eye.z);
+
+ result.phi = angleBetweenVectors(viewV,pointV);
+
+ if(result.phi <= 0.0001 || result.phi >= 3.1415)
+   {
+     result.theta = 0;
+   }
+ else
+   {
+     viewPlaneV = crossP(viewV, upV);
+     pointPlaneV = crossP(viewV, pointV);
+     result.theta = angleBetweenVectors(viewPlaneV, pointPlaneV);
+     if(oppositeSide(pointV, viewPlaneV))
+      {
+        result.theta = -result.theta;
+      }
+   }
+ return result;
+}
+
+/********************************************/
+/* given theta and phi, the view angles, return points to be plotted */
+
+point2d findScreenPoints(angles anglePair)
+{
+ point2d result;
+ result.x = (int)floor(WINDOWSIZE/width * anglePair.phi * sin(anglePair.theta) + WINDOWSIZE/2);
+ result.y = (int)floor(-WINDOWSIZE/width * anglePair.phi * cos(anglePair.theta) + WINDOWSIZE/2);
+ return result;
+}
+
+/*******************************************/
+----------------------------
+XspecConv.h
+/************************/
+/* XspecConv.h               */
+/*************************/
+#include <Xm/Xm.h>
+#define point3d vector
+
+typedef struct
+{
+double x, y, z;
+}vector;
+
+typedef struct
+{
+double theta, phi;
+}angles;
+
+typedef struct
+{
+int x, y;
+}point2d;
+
+typedef struct
+{
+int from, to;
+}
+line;
+
+extern Widget CreateMenu (Widget parent, char* name);
+
+extern Widget CreateMenuChoice(Widget parent, char* name,
+                               XtCallbackProc callback,
+                               XtPointer client_data);
+extern Widget CreatePushButton(Widget parent, char* name,
+                               XtCallbackProc callback,
+                               XtPointer client_data);
+extern Widget CreateToggleButton(Widget parent, char* name,
+                               XtCallbackProc callback,
+                               int client_data);
+
+extern Widget CreateDrawingArea(Widget parent, char* name,
+                                int width, int height,
+                                XtCallbackProc callback,
+                                XtPointer client_data);
+
+extern void UnionExposeWithRegion(XExposeEvent* event, Region region);
+
+extern void ClipToRegion(Display* display, GC gc, Region region);
+
+extern Widget CreateShell(Widget parent, char* app_name, char* app_class, char* title);
+
+extern Widget CreateHSlider(Widget parent, char* name,
+                            int minimum, int maximum,
+                            int init,
+                            char* title, XtCallbackProc callback,
+                            XtPointer client_data);
+----------------------
+XspecMath.h
+/********************************************/
+/*XspecMath.h                               */
+/********************************************/
+
+
+
+
+/**********************************************/
+/*given 3D point, returns the theta and phi of the view from the global 'eye' */
+
+extern angles findAngles(point3d point);
+
+/********************************************/
+/* given theta and phi, the view angles, return points to be plotted */
+
+extern point2d findScreenPoints(angles anglePair);
+
+/*******************************************/
+-------------------------------
+boxes.c
+/*********************************
+      boxes.c
+copyright 1996 by Jon T. Bierce-Wilson
+creates files to be used by Xspec program
+*****************************************/
+
+
+#include <stdio.h>
+#include <stdlib.h>
+
+main()
+{
+int i, j;
+float d = .90;
+float x, y, z;
+int numrows;
+int numcols;
+char filename[101];
+FILE *f1;
+ printf("This program creates files to be used with the Xspec program.\n");
+ printf("It creates files for cubes starting at 0,0,0\n");
+ printf("How many boxes up y axis? ");
+ scanf(" %d",&numrows);
+ printf("How many boxes over x axis? ");
+ scanf(" %d",&numcols);
+
+ (void)fgets(filename,101,stdin);
+ (void)fputs("Enter the output file name:  ",stdout);
+ fflush(stdout);
+ fgets(filename,101,stdin);
+ filename[strlen(filename)-1]='\0';
+ f1= fopen(filename,"w");
+ if (f1 == NULL)
+{
+(void)printf("Unable to open file");
+perror("open");
+exit(1);
+}
+ fprintf(f1,"%d\n",numcols * numrows * 8);
+ x = 0.55;
+ y = 0.55;
+ z = 0.55;
+ for(j=0;j<numrows;j++)
+  for(i=0;i<numcols;i++)
+  {
+    fprintf(f1,"%f %f %f \n", x+i,   y+j,   z);
+    fprintf(f1,"%f %f %f \n", x+i+d, y+j,   z);
+    fprintf(f1,"%f %f %f \n", x+i+d, y+j+d, z);
+    fprintf(f1,"%f %f %f \n", x+i,   y+j+d, z);
+    fprintf(f1,"%f %f %f \n", x+i,   y+j,   z+d);
+    fprintf(f1,"%f %f %f \n", x+i+d, y+j,   z+d);
+    fprintf(f1,"%f %f %f \n", x+i+d, y+j+d, z+d);
+    fprintf(f1,"%f %f %f \n\n", x+i, y+j+d, z+d);
+   }
+
+ fprintf(f1," %d\n", numrows * numcols * 12);
+ for (j=0;j<numrows;j++)
+  for (i=0;i<numcols;i++)
+   {
+    fprintf(f1," %d %d\n", i*8*numrows+j*8,   i*8*numrows+j*8+1);
+    fprintf(f1," %d %d\n", i*8*numrows+j*8+1, i*8*numrows+j*8+2);
+    fprintf(f1," %d %d\n", i*8*numrows+j*8+2, i*8*numrows+j*8+3);
+    fprintf(f1," %d %d\n", i*8*numrows+j*8+3, i*8*numrows+j*8);
+
+    fprintf(f1," %d %d\n", i*8*numrows+j*8,   i*8*numrows+j*8+4);
+    fprintf(f1," %d %d\n", i*8*numrows+j*8+1, i*8*numrows+j*8+5);
+    fprintf(f1," %d %d\n", i*8*numrows+j*8+2, i*8*numrows+j*8+6);
+    fprintf(f1," %d %d\n", i*8*numrows+j*8+3, i*8*numrows+j*8+7);
+
+    fprintf(f1," %d %d\n", i*8*numrows+j*8+4, i*8*numrows+j*8+5);
+    fprintf(f1," %d %d\n", i*8*numrows+j*8+5, i*8*numrows+j*8+6);
+    fprintf(f1," %d %d\n", i*8*numrows+j*8+6, i*8*numrows+j*8+7);
+    fprintf(f1," %d %d\n\n", i*8*numrows+j*8+7, i*8*numrows+j*8+4);
+
+  }
+ fclose(f1);
+printf("Wrote file %s\n",filename);
+}
+----------------------
+motic.c
+/********************************/
+/* convenience functions for motif drawing program */
+
+
+#include "motif.h"
+#include <Xm/CascadeB.h>
+#include <Xm/PushB.h>
+#include <Xm/RowColumn.h>
+#include <Xm/DrawingA.h>
+
+/********************************/
+
+Widget CreateMenu(Widget parent, char* name)
+{
+ Widget cascade;
+ Widget menuwidget;
+ Arg args[20];
+ int n;
+
+ n = 0;
+ menuwidget = XmCreatePulldownMenu(parent, name, args, n);
+ n = 0;
+ XtSetArg(args[n], XmNsubMenuId, menuwidget); n++;
+ cascade = XmCreateCascadeButton(parent, name, args, n);
+ XtManageChild(cascade);
+ return menuwidget;
+}
+
+/******************************************/
+
+Widget CreateMenuChoice(Widget parent, char* name,
+                        XtCallbackProc callback,
+                        XtPointer client_data)
+{
+ return CreatePushbutton(parent, name, callback, client_data);
+}
+
+/*****************************************/
+
+Widget CreatePushbutton(Widget parent, char* name,
+                        XtCallbackProc callback,
+                        XtPointer client_data)
+{
+ Widget button;
+ Arg args[20];
+ int n;
+
+ n = 0;
+ button = XmCreatePushButton(parent, name, args, n);
+ XtManageChild(button);
+ XtAddCallback(button, XmNactivateCallback, callback, client_data);
+ return button;
+}
+
+/**********************************************/
+
+Widget CreateDrawingArea(Widget parent, char* name, int width, int height,
+                         XtCallbackProc callback, XtPointer client_data)
+{
+ Widget widget;
+ Arg args[20];
+ int n;
+
+ n = 0;
+ XtSetArg(args[n], XmNwidth, width); n++;
+ XtSetArg(args[n], XmNheight, height); n++;
+ XtSetArg(args[n], XmNallowResize, True); n++;
+ widget = XmCreateDrawingArea(parent, name, args, n);
+ XtManageChild(widget);
+ XtAddCallback(widget, XmNresizeCallback, callback, client_data);
+ XtAddCallback(widget, XmNinputCallback, callback, client_data);
+ XtAddCallback(widget, XmNexposeCallback, callback, client_data);
+ return widget;
+}
+
+/*****************************************************/
+
+------------------------
+motift.c
+/********************************/
+/* convenience functions for motif drawing program */
+
+
+#include "motif.h"
+#include <Xm/CascadeB.h>
+#include <Xm/PushB.h>
+#include <Xm/RowColumn.h>
+#include <Xm/DrawingA.h>
+
+/********************************/
+
+Widget CreateMenu(Widget parent, char* name)
+{
+ Widget cascade;
+ Widget menuwidget;
+ Arg args[20];
+ int n;
+
+ n = 0;
+ menuwidget = XmCreatePulldownMenu(parent, name, args, n);
+ n = 0;
+ XtSetArg(args[n], XmNsubMenuId, menuwidget); n++;
+ cascade = XmCreateCascadeButton(parent, name, args, n);
+ XtManageChild(cascade);
+ return menuwidget;
+}
+
+/******************************************/
+
+Widget CreateMenuChoice(Widget parent, char* name,
+                        XtCallbackProc callback,
+                        XtPointer client_data)
+{
+ return CreatePushbutton(parent, name, callback, client_data);
+}
+
+/*****************************************/
+
+Widget CreatePushbutton(Widget parent, char* name,
+                        XtCallbackProc callback,
+                        XtPointer client_data)
+{
+ Widget button;
+ Arg args[20];
+ int n;
+
+ n = 0;
+ button = XmCreatePushButton(parent, name, args, n);
+ XtManageChild(button);
+ XtAddCallback(button, XmNactivateCallback, callback, client_data);
+ return button;
+}
+
+/**********************************************/
+
+Widget CreateDrawingArea(Widget parent, char* name, int width, int height,
+                         XtCallbackProc callback, XtPointer client_data)
+{
+ Widget widget;
+ Arg args[20];
+ int n;
+
+ n = 0;
+ XtSetArg(args[n], XmNwidth, width); n++;
+ XtSetArg(args[n], XmNheight, height); n++;
+ XtSetArg(args[n], XmNallowResize, True); n++;
+ widget = XmCreateDrawingArea(parent, name, args, n);
+ XtManageChild(widget);
+ XtAddCallback(widget, XmNresizeCallback, callback, client_data);
+ XtAddCallback(widget, XmNinputCallback, callback, client_data);
+ XtAddCallback(widget, XmNexposeCallback, callback, client_data);
+ return widget;
+}
+
+/*****************************************************/
+
+------------------------
+motifst.c
+/*Motif test program*/
+
+/* #include "motif.h" */
+#include <X11/Xutil.h>
+#include <Xm/MainW.h>
+#include <Xm/RowColumn.h>
+#include <stdio.h>
+
+Display* global_display;
+Window   global_window;
+GC       global_gc;
+Region   global_region = (Region) NULL;
+
+/****************************************/
+
+extern void DrawTest(Display* display, Window window, GC gc);
+extern Widget CreateMenu (Widget parent, char* name);
+extern Widget CreateMenuChoice (Widget menu, char* name,
+                         XtCallbackProc callback,
+                         XtPointer client_data);
+extern Widget CreateDrawingArea (Widget parent, char* name,
+                                 int width, int height,
+                                 XtCallbackProc callback,
+                                 XtPointer client_data);
+
+/*****************************************/
+void HandleExpose(XExposeEvent* event)
+{
+ XRectangle rectangle;
+ if (global_region == (Region) NULL)
+  {
+   global_region = XCreateRegion();
+  }
+ UnionExposeWithRegion(event, global_region);
+ if (event->count == 0)
+  {
+   ClipToRegion(global_display, global_gc, global_region);
+   XDestroyRegion(global_region);
+   global_region = (region) NULL;
+   DrawTest(global_display, global_window, global_gc);
+   XSetClipMask(global_display, global_gc, (Pixmap) None);
+  }
+}
+
+/****************************************/
+
+void drawCB(Widget widget, XtPointer client_data, XtPointer call_data)
+{
+ XmDrawingAreaCallbackStruct*  ptr;
+ ptr = (XmDrawingAreaCallbackStruct*) call_data;
+ if (ptr->reason == XmCR_EXPOSE)
+  {
+   HandleExpose((XExposeEvent*) ptr->event);
+  }
+}
+
+/******************************************/
+
+static void exitCB(Widget widget, XtPointer client_data,
+                   XtPointer call_data)
+{
+ exit(0);
+}
+
+/*******************************************/
+
+int main(int argc, char** argv)
+{
+ XtAppContext app_context;
+ Display* display;
+ Widget parent;
+ Widget mainwindow;
+ Widget menubar;
+ Widget filemenu;
+ Widget exitchoice;
+ Widget drawingarea;
+ Arg    args[20];
+ int    n;
+ int    screen;
+
+ n = 0;
+ XtSetArg(args[n], XmNmappedWhenManaged, False); n++;
+ XtSetArg(args[n], XmNallowResize, True); n++;
+ XtSetArg(args[n], XmNwidth, 500); n++;
+ XtSetArg(args[n], XmNheight, 360); n++;
+ parent = XtAppInitialize(&app_context, "ProX", (XrmOptionDescList) NULL,
+                          0,  ARGC_PTR &argc, argv, (String*) NULL, args, n);
+ n = 0;
+ XtSetArg(args[n], XmNmappedWhenManaged, True); n++;
+ mainwindow = XmCreateMainWindow(parent, "main", args, n);
+ n = 0;
+ menubar = XmCreateMenuBar(mainwindow, "menubar", args, n);
+ XtManageChild(menubar);
+ filemenu = CreateMenu(menubar, "filemenu");
+ exitchoice = CreateMenuChoice(filemenu, "exitchoice", (XtCallbackProc) exitCB,
+                              (XtPointer) NULL);
+ drawingarea = CreateDrawingArea(mainwindow, "drawingarea", 640, 480,
+                                (XtCallbackProc) drawCB, (XtPointer) NULL);
+ XmMainWindowSetAreas(mainwindow, menubar, (Widget) NULL,
+                                      (Widget) NULL, (Widget) NULL, drawingarea);
+ XtManageChild(mainwindow);
+ XtRealizeWidget(parent);
+ global_display = XtDisplay(drawingarea);
+ global_window = XtWindow(drawingarea);
+ screen = DefaultScreen(global_display);
+ global_gc = XCreateGC(global_display, global_window, OL, (XGCValues*) NULL);
+ XSetForeground(global_display, global_gc,
+               BlackPixel(global_display, screen));
+ XtMapWidget(parent);
+ XtAppMainLoop(app_context);
+ return 0;
+}
+--------------------------
+motif.h
+/*************************/
+/* motif.h               */
+/*************************/
+#ifndef motif_h_
+#define motif_h_      1
+#endif
+
+#include <Xm/Xm.h>
+#if XtSpecificationRelease > 4
+#define ARGC_PTR  (int*)
+#else
+#define ARGC_PTR  (unsigned int*)
+#endif
+
+/**************************************/
+
+extern Widget CreateMenu (Widget parent, char* name);
+
+extern Widget CreateMenuChoice(Widget parent, char* name,
+                               XtCallbackProc callback,
+                               XtPointer client_data);
+
+extern Widget CreateDrawingArea(Widget parent, char* name,
+                                int width, int height,
+                                XtCallbackProc callback,
+                                XtPointer client_data);
+--------------------------------
+digitize.c
+/*************************************
+             digitize.c
+copyright 1996 Jon T. Bierce-Wilson
+based on "dig346.c" by Dean Brock
+**************************************/
+
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <errno.h>
+#include <sys/time.h>
+#include <string.h>
+
+#define MSECWAIT 50
+#define MAXPOINTS 300
+#define MAXLINES 450
+
+void eatum(int fdin, int msec)
+  {
+   struct timeval waittime ;
+   fd_set fdmask ;
+   char eatitup[14] ;
+   waittime.tv_sec  = msec/1000 ;
+   waittime.tv_usec = (msec%1000)*1000 ;
+   FD_ZERO(&fdmask) ;
+   FD_SET(fdin, &fdmask) ;
+   while (select(fdin+1,&fdmask,(fd_set *)NULL,(fd_set *)NULL,&waittime) == 1)
+     {
+      (void) read(fdin, eatitup, 13) ;
+      FD_SET(fdin, &fdmask) ;
+     }
+  }
+
+void main(int argc, char * argv[])
+  {
+   FILE *outf;
+   int ttyfd, cx, cy, i,
+       llx, lly,urx, ury, debug, numpts, numlines ;
+   double maxx, diffx, maxy, rz, state;
+   struct {double x; double y;} pointArray[MAXPOINTS];
+   struct {int from; int to;} lineArray[MAXLINES];
+   char button, inbuff[14], filename[101], filename2[101] ;
+   debug = (argc == 2 && !strcmp(argv[1], "-d")) ;
+#ifdef __alpha
+   ttyfd = open("/dev/tty00", O_RDONLY) ;
+#else
+   ttyfd = open("/dev/tty16", O_RDONLY) ;
+#endif
+   if (ttyfd < 0)
+     {
+      perror("open") ;
+      exit(1) ;
+     }
+
+   (void) fputs("This program creates datafiles for the program Xspec\n",stdout);
+   (void) fputs("using a digitizing tablet\n",stdout);
+   (void) fputs("Mash on origin with left(0) digitizer button\n\n", stdout) ;
+   (void) read(ttyfd, inbuff, 13) ;
+   (void) sscanf(inbuff, "%1cD%5d%5d\n", &button, &llx, &lly) ;
+   if (debug)
+      (void) printf("Lower left  = (%d, %d)\n", llx, lly) ;
+   eatum(ttyfd, MSECWAIT) ;
+
+   (void) fputs("Mash on a first quadrant (upper right) reference point\n",stdout);
+   (void) fputs("with a known integer X value.\n\n", stdout) ;
+   (void) read(ttyfd, inbuff, 13) ;
+   (void) sscanf(inbuff, "%1cD%5d%5d\n", &button, &urx, &ury) ;
+   if (debug)
+      (void) printf("Upper right = (%d, %d)\n\n", urx, ury) ;
+
+   diffx = (double)urx-llx ;
+   (void) printf("Enter the value for X at the reference point:  ") ;
+   (void) fflush(stdout) ;
+   (void) scanf("%lf", &maxx) ;
+   maxy = (ury-lly)*maxx/diffx ;
+   (void) printf("\nThe Y co-ordinate of the reference point is %f)\n\n",
+		 maxy) ;
+   (void) printf("Enter the value of the constant Z plane: ");
+   (void) fflush(stdout);
+   (void) scanf("%lf",&rz);
+
+   (void) fgets(filename, 100, stdin) ;
+   (void) fputs("Enter the output file name:  ", stdout) ;
+   (void) fflush(stdout) ;
+   (void) fgets(filename, 100, stdin) ;
+   filename[strlen(filename) - 1] = '\0' ;
+   outf = fopen(filename, "w") ;
+   if (outf == NULL)
+     {
+      (void) printf("Unable to open %d\n", filename) ;
+      perror("open") ;
+      exit(1) ;
+     }
+
+   printf("\nWriting to output file %s\n\n", filename) ;
+
+   eatum(ttyfd, MSECWAIT) ;
+   (void) fputs("Add each point in polyline with left (0) click.\n", stdout) ;
+   (void) fputs("Click right (3) for final point in each polyline.\n", stdout) ;
+   (void) fputs("Continue with new polyline or\n", stdout) ;
+   (void) fputs("end by pressing the E button.\n\n", stdout) ;
+
+   numpts = 0 ; numlines = 0; state = 0;
+   (void) read(ttyfd, inbuff, 13) ;
+   (void) sscanf(inbuff, "%1cD%5d%5d\n", &button, &cx, &cy) ;
+   while (button != 'E')
+     {
+      if(state == 0 && button == '0')
+	{
+	  pointArray[numpts].x = (cx-llx)*maxx/diffx ;
+	  pointArray[numpts].y = (cy-lly)*maxx/diffx ;
+	  state = 1 ;
+	  numpts++;
+	}
+      else if(state == 1)
+	{
+	  pointArray[numpts].x = (cx-llx)*maxx/diffx ;
+	  pointArray[numpts].y = (cy-lly)*maxx/diffx ;
+	  lineArray[numlines].from = numpts - 1;
+	  lineArray[numlines].to = numpts;
+	  numpts++;
+	  numlines++;
+	  if(button == '3') {state = 0;}
+	}
+      else
+	printf("%c",0x7);
+
+      eatum(ttyfd, MSECWAIT) ;
+      (void) read(ttyfd, inbuff, 13) ;
+      (void) sscanf(inbuff, "%1cD%5d%5d\n", &button, &cx, &cy) ;
+     }
+
+   fprintf(outf,"%d\n", numpts);
+   for(i=0;i<numpts;i++)
+    {
+  (void) fprintf(outf, "%lf %lf %lf\n",pointArray[i].x,pointArray[i].y,rz);
+    }
+
+   fprintf(outf,"%d\n", numlines);
+   for(i=0;i<numlines;i++)
+    {
+  (void) fprintf(outf, "%d %d\n",lineArray[i].from, lineArray[i].to);
+    }
+
+   (void) fclose(outf) ;
+   (void) printf("\n\n%d points written to file %s\n", numpts, filename) ;
+
+  } /* main */
