@@ -1,8 +1,14 @@
 # Xspec
 Fish-eye lens curved perspective
 --------------------------------
-This is a program in c with X Window and Motif library graphics.
-It draws 3-D vector graphics of shapes in it's own *xsp file format.
-The graphics are displayed in curved perspective, with a control panel to adjust the view point.
+This program draws 3-D vector graphics displayed in curved perspective.
+
+## Version in C
+Using X Window and Motif libraries. Has a drawing window and a control panel in a separate window with sliders for eye position and direction, and field of view.
+Reads data from its own *.xsp text files.
+
+## Version in Python
+Uses Pygame library, and data from Python data files. 
+
 
 ![screenshot](https://github.com/bitslayer42/Xspec/raw/master/Xspec_lg.JPG)
