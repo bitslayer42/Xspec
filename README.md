@@ -11,4 +11,4 @@ Reads data from its own *.xsp text files.
 Uses Pygame library, and data from Python data files. 
 
 
-![screenshot](https://github.com/bitslayer42/Xspec/raw/master/Xspec_lg.JPG)
+![screenshot](https://github.com/bitslayer42/Xspec/blob/main/Xspec_lg.JPG)
