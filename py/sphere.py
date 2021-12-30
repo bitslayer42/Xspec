@@ -2,10 +2,10 @@ import pygame
 import os
 import math
 import random
-from matrix import matrix_multiplication
+from lib.matrix import matrix_multiplication
 from math import acos,atan2,sqrt,cos,sin
 fieldOfView = 0.63
-from spheredata import points,lines
+from data.sphere import points,lines
 
 os.environ["SDL_VIDEO_CENTERED"]='1'  # Center window
 black, white, blue  = (0, 0, 0), (230, 230, 230), (0, 154, 255)

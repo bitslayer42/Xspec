@@ -1,12 +1,25 @@
+import sys
 import pygame
 import os
 import math
 import random
 from lib.matrix import matrix_multiplication
 from math import acos,atan2,sqrt,cos,sin
-fieldOfView = 0.63
+import importlib
+from os.path import dirname, basename, isfile, join
+import glob
 
-from data.boxplane import points,lines
+fieldOfView = 0.63
+if len(sys.argv) >= 2:
+    shape = importlib.import_module("data." + sys.argv[1])
+else:
+    datadir = os.getcwd() + "/data"
+    modules = glob.glob(join(datadir, "*.py"))
+    __all__ = [ basename(f)[:-3] for f in modules if isfile(f) and not f.endswith('__init__.py')]
+    print ("Add a shape as command line parameter. One of:")
+    print(__all__)
+    quit()
+points,lines = shape.points, shape.lines
 
 os.environ["SDL_VIDEO_CENTERED"]='1'  # Center window
 black, white, blue  = (0, 0, 0), (230, 230, 230), (0, 154, 255)

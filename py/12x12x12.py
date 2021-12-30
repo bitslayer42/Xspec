@@ -2,7 +2,7 @@ import pygame
 import os
 import math
 import random
-from matrix import matrix_multiplication
+from lib.matrix import matrix_multiplication
 from math import acos,atan2,sqrt,cos,sin
 fieldOfView = 0.63
 # from icosphere import points
