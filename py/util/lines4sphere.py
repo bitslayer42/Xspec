@@ -1,6 +1,7 @@
+# I used this to connect only points that were close enough to each other
 # move out of util dir to run
 import math
-from spheredata import points
+from data.sphere import points
 
 listy = []
 for pix, p in enumerate(points):

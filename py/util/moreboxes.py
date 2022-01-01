@@ -1,6 +1,6 @@
-# mirrors array of boxes
+# I used this to create the box plane: mirrors array of boxes
 # move out of util dir to run
-from boxesdata import points,lines
+from data.boxplane import points,lines
 import json
 
 newp = []

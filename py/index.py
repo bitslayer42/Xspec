@@ -14,6 +14,7 @@ from lib.blit_text import blit_text
 fieldOfView = 0.63
 if len(sys.argv) >= 2:
     shape = importlib.import_module("data." + sys.argv[1])
+    print(shape)
 else:
     datadir = os.getcwd() + "/data"
     modules = glob.glob(join(datadir, "*.py"))
@@ -21,12 +22,15 @@ else:
     print ("Add a shape as command line parameter. One of:")
     print(__all__)
     quit()
-points,lines = shape.points, shape.lines
+points, lines = shape.points, shape.lines
+try: shape.z_distance
+except AttributeError: z_distance = 10
+else: z_distance = shape.z_distance
 
 #os.environ["SDL_VIDEO_CENTERED"]='1'  # Center window
 black, white, blue  = (0, 0, 0), (230, 230, 230), (0, 154, 255)
-scr_width, scr_height = 3000, 2000 # 1680, 1050
-
+scr_width, scr_height = 1680, 1050
+# scr_width, scr_height = 3000, 2000 
 pygame.init()
 pygame.display.set_caption("Xspec")
 screen = pygame.display.set_mode((scr_width, scr_height))
@@ -40,9 +44,9 @@ anglez = 0
 speedx = 0
 speedy = 0
 speedz = 0
-z_distance = 10
+#z_distance = defaults["z_distance"]
 scr_center = [scr_width//2, scr_height//2]
-scale = 800
+scale = scr_height * 2 // 3
 speedup = 0.01
 
 def connect_point(i, j, projected_points):
@@ -58,15 +62,21 @@ def getCameraCoords(x,y,z):
     return [x1,y1]
 
 run = True
+hidetext = False
 while run:
     clock.tick(fps)
     screen.fill(white)
-    text = 'Use the arrow keys or WASD to rotate shape.\nZ to zoom in, X to zoom out.\nESC to quit.\n\n' \
-    + '\nX Speed: ' + str(speedx) \
-    + '\nY Speed: ' + str(speedy) \
-    + '\nZ Distance: ' + str(z_distance)
+    if not hidetext:
+        text = 'Use the arrow keys or WASD to rotate shape.' \
+        + '\nZ to zoom in, X to zoom out.' \
+        + '\nH to hide this text.' \
+        + '\nESC to quit.' \
+        + '\n' \
+        + '\nX Speed: ' + str(speedx) \
+        + '\nY Speed: ' + str(speedy) \
+        + '\nZ Distance: ' + str(z_distance)
 
-    blit_text(screen, text, (20,20), font)
+        blit_text(screen, text, (20,20), font)
 
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
@@ -78,10 +88,12 @@ while run:
                 speedx = speedx + speedup
             if event.key == pygame.K_DOWN or event.key == ord('s'):
                 speedx = speedx - speedup
-            if event.key == event.key == ord('z'):
+            if event.key == ord('z'):
                 z_distance = z_distance - 0.9
-            if event.key == event.key == ord('x'):
+            if event.key == ord('x'):
                 z_distance = z_distance + 0.9
+            if event.key == ord('h'):
+                hidetext = True
         if event.type == pygame.KEYUP:
             if event.key == ord('q') or event.key == pygame.K_ESCAPE:
                 pygame.quit()
