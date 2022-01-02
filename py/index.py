@@ -14,18 +14,20 @@ from lib.blit_text import blit_text
 fieldOfView = 0.63
 if len(sys.argv) >= 2:
     shape = importlib.import_module("data." + sys.argv[1])
-    print(shape)
 else:
     datadir = os.getcwd() + "/data"
     modules = glob.glob(join(datadir, "*.py"))
-    __all__ = [ basename(f)[:-3] for f in modules if isfile(f) and not f.endswith('__init__.py')]
+    filelist = [ basename(f)[:-3] for f in modules if isfile(f) and not f.endswith('__init__.py')]
     print ("Add a shape as command line parameter. One of:")
-    print(__all__)
+    print(filelist)
     quit()
 points, lines = shape.points, shape.lines
 try: shape.z_distance
 except AttributeError: z_distance = 10
 else: z_distance = shape.z_distance
+try: shape.drawdots
+except AttributeError: drawdots = False
+else: drawdots = shape.drawdots
 
 #os.environ["SDL_VIDEO_CENTERED"]='1'  # Center window
 black, white, blue  = (0, 0, 0), (230, 230, 230), (0, 154, 255)
@@ -36,7 +38,7 @@ pygame.display.set_caption("Xspec")
 screen = pygame.display.set_mode((scr_width, scr_height))
 clock = pygame.time.Clock()
 fps = 60
-font = pygame.font.SysFont('Arial', 32)
+font = pygame.font.SysFont('Arial', 14)
 
 anglex = 0
 angley = 0
@@ -125,7 +127,8 @@ while run:
         y = int(projected_2d[1] * scale) + scr_center[1]
 
         projected_points[index] = [x, y]
-        # pygame.draw.circle(screen, black, (x, y), 3)
+        if drawdots:
+            pygame.draw.circle(screen, black, (x, y), 3)
         index += 1
     #draw edges       
     for line in lines:
