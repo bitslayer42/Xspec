@@ -1,5 +1,8 @@
+z_distance = 15
+drawdots = False
+
 points = []
-l = 100 # number of boxes across in grid x,y
+l = 60 # number of boxes across in grid x,y
 mingrid = l // -2 + 1
 maxgrid = l // 2 + 1
 
