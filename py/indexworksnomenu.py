@@ -5,11 +5,11 @@ import pygame
 import math
 import random
 from lib.matrix import matrix_multiplication
+from math import acos,atan2,sqrt,cos,sin
 import importlib
 from os.path import dirname, basename, isfile, join
 import glob
 from lib.blit_text import blit_text
-from lib.calc_points import calc_points
 
 fieldOfView = 0.63
 if len(sys.argv) >= 2:
@@ -40,12 +40,29 @@ clock = pygame.time.Clock()
 fps = 60
 font = pygame.font.SysFont('Arial', 14)
 
-anglex = 0;angley = 0;anglez = 0
-speedx = 0;speedy = 0;speedz = 0
+anglex = 0
+angley = 0
+anglez = 0
+speedx = 0
+speedy = 0
+speedz = 0
 #z_distance = defaults["z_distance"]
 scr_center = [scr_width//2, scr_height//2]
 scale = scr_height * 2 // 3
 speedup = 0.01
+
+def connect_point(i, j, projected_points):
+    a = projected_points[i]
+    b = projected_points[j]
+    pygame.draw.line(screen, black, (a[0], a[1]), (b[0], b[1]), 1)
+
+def getCameraCoords(x,y,z):
+    if x==y==z==0:
+        return [0,0]
+    x1 = (acos(-(z / sqrt(x**2 + y**2 + z**2)))) * fieldOfView * cos( atan2(y,x) )
+    y1 = (acos(-(z / sqrt(x**2 + y**2 + z**2)))) * fieldOfView * sin( atan2(y,x) )
+    return [x1,y1]
+
 text = 'Use the arrow keys or WASD to rotate shape.' \
 + '\nZ to zoom in, X to zoom out.' \
 + '\nH to hide this text.' \
@@ -62,6 +79,7 @@ while run:
     screen.fill(white)
     if not hidetext:
         ftext = text.format(str(speedx),str(speedy),str(z_distance))
+
         blit_text(screen, ftext, (20,20), font)
 
     for event in pygame.event.get():
@@ -84,13 +102,44 @@ while run:
             if event.key == ord('q') or event.key == pygame.K_ESCAPE:
                 pygame.quit()
                 sys.exit()
+    index = 0
+    projected_points = [j for j in range(len(points))]
+
+    rotation_x = [[1, 0, 0],
+                  [0, math.cos(anglex), -math.sin(anglex)],
+                  [0, math.sin(anglex), math.cos(anglex)]]
+
+    rotation_y = [[math.cos(angley), 0, -math.sin(angley)],
+                  [0, 1, 0],
+                  [math.sin(angley), 0, math.cos(angley)]]
+
+    rotation_z = [[math.cos(anglez), -math.sin(anglez), 0],
+                  [math.sin(anglez), math.cos(anglez), 0],
+                  [0, 0 ,1]]
+
+    for point in points:
+        # rotate shape in 3d
+        rotated_2d = matrix_multiplication(rotation_x, point)
+        rotated_2d = matrix_multiplication(rotation_y, rotated_2d)
+        rotated_2d = matrix_multiplication(rotation_z, rotated_2d)
+        
+        # project to 2d
+        projected_2d = getCameraCoords(rotated_2d[0][0],rotated_2d[1][0],rotated_2d[2][0]-z_distance)
+        x = int(projected_2d[0] * scale) + scr_center[0]
+        y = int(projected_2d[1] * scale) + scr_center[1]
+
+        projected_points[index] = [x, y]
+        if drawdots:
+            pygame.draw.circle(screen, black, (x, y), 3)
+        index += 1
+    #draw edges       
+    for line in lines:
+        connect_point(line[0], line[1], projected_points)
+    
 
     anglex += speedx
     angley += speedy
     anglez += speedz
-
-    calc_points(screen,points,lines,anglex,angley,anglez,z_distance,drawdots,fieldOfView)
-    
     pygame.display.update()
 
 pygame.quit()

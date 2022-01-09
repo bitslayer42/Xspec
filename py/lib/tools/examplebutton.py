@@ -1,4 +1,3 @@
-# https://pygamewidgets.readthedocs.io/en/latest/widgets/button/
 import pygame
 
 import pygame_widgets

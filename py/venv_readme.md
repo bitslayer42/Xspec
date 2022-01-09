@@ -6,7 +6,7 @@ python -m venv -name- (creates dir)
 $ source <venv>/bin/activate
 
 -----
-deactivate
+deactivatecd
 
 ### Install package
 

@@ -1,3 +1,4 @@
+# this version never worked but it shows the list of files in the menu
 import sys
 import os
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = '1'
@@ -10,7 +11,7 @@ import glob
 from lib.blit_text import blit_text
 import pygame_widgets
 from pygame_widgets.button import Button
-from loadshape import loadshape
+from lib.load_shape import load_shape
 
 def connect_point(i, j, projected_points):
     a = projected_points[i]
@@ -61,7 +62,7 @@ text = 'Enter a number to choose a file to load.'
 for ix, filenm in enumerate(filelist):
     Button(
         screen,10,35*ix+200,180,30,text=filenm,
-        onClick=loadshape,
+        onClick=load_shape,
         onClickParams=[filenm])
 
 run = True
@@ -84,6 +85,7 @@ while run:
 
     events = pygame.event.get()
     for event in events:
+        print (event.type)
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_LEFT or event.key == ord('a'):
                 speedy = speedy + speedup
