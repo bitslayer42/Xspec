@@ -1,3 +1,4 @@
+#dont do much yet
 import os
 import glob
 from os.path import dirname, basename, isfile, join
@@ -5,7 +6,6 @@ import pygame
 import pygame_widgets
 from pygame_widgets.button import Button
 from lib.load_shape import load_shape
-from lib.connect_point import connect_point
 from lib.get_camera_coords import get_camera_coords
 
 datadir = os.getcwd() + "/data"

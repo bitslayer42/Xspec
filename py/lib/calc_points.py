@@ -2,7 +2,6 @@ import math
 import pygame
 from lib.matrix import matrix_multiplication
 from lib.get_camera_coords import get_camera_coords
-from lib.connect_point import connect_point
 
 def calc_points(screen,points,lines,anglex,angley,anglez,z_distance,drawdots,fieldOfView):
     index = 0
@@ -10,7 +9,7 @@ def calc_points(screen,points,lines,anglex,angley,anglez,z_distance,drawdots,fie
     scr_center = [scr_width//2, scr_height//2]
     scale = scr_height * 2 // 3
 
-    projected_points = [j for j in range(len(points))]
+    projected_points = []
 
     rotation_x = [[1, 0, 0],
                   [0, math.cos(anglex), -math.sin(anglex)],
@@ -35,12 +34,10 @@ def calc_points(screen,points,lines,anglex,angley,anglez,z_distance,drawdots,fie
         x = int(projected_2d[0] * scale) + scr_center[0]
         y = int(projected_2d[1] * scale) + scr_center[1]
 
-        projected_points[index] = [x, y]
+        projected_points.append([x, y])
         if drawdots:
             pygame.draw.circle(screen, (0, 0, 0), (x, y), 3)
         index += 1
     #draw edges       
     for line in lines:
-        ln = connect_point(line[0], line[1], projected_points)
-        pygame.draw.line(screen, (0, 0, 0), (ln[0][0], ln[0][1]), (ln[1][0], ln[1][1]), 1)
-
+        pygame.draw.line(screen, (0, 0, 0), (projected_points[line[0]]), (projected_points[line[1]]), 1)

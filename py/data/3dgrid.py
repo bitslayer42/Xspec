@@ -21,5 +21,3 @@ for i in range(0,l-1):
     for j in range(0,l):
         for k in range(0,l):
             lines.append([k + l*j + l*l*i, k + l*j + l*l*i + l*l])            
-# for m in range(len(points)):
-#     connect_point(m, random.randint(0, len(points)-1))

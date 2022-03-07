@@ -1,38 +1,30 @@
+#new working version that outsources a lot
 import sys
 import os
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = '1'
 import pygame
-import math
-import random
-from lib.matrix import matrix_multiplication
 import importlib
 from os.path import dirname, basename, isfile, join
 import glob
 from lib.blit_text import blit_text
 from lib.calc_points import calc_points
+from lib.load_shape import load_shape
 
 fieldOfView = 0.63
 if len(sys.argv) >= 2:
-    shape = importlib.import_module("data." + sys.argv[1])
-else:
+    [ points, lines, z_distance, drawdots ] = load_shape(sys.argv[1])
+else:  # no cli param provided
     datadir = os.getcwd() + "/data"
     modules = glob.glob(join(datadir, "*.py"))
     filelist = [ basename(f)[:-3] for f in modules if isfile(f) and not f.endswith('__init__.py')]
     print ("Add a shape as command line parameter. One of:")
     print(filelist)
     quit()
-points, lines = shape.points, shape.lines
-try: shape.z_distance
-except AttributeError: z_distance = 10
-else: z_distance = shape.z_distance
-try: shape.drawdots
-except AttributeError: drawdots = False
-else: drawdots = shape.drawdots
 
 #os.environ["SDL_VIDEO_CENTERED"]='1'  # Center window
 black, white, blue  = (0, 0, 0), (230, 230, 230), (0, 154, 255)
-scr_width, scr_height = 1680, 1050
-# scr_width, scr_height = 3000, 2000 
+# scr_width, scr_height = 1680, 1050
+scr_width, scr_height = 1000, 800 
 pygame.init()
 pygame.display.set_caption("Xspec")
 screen = pygame.display.set_mode((scr_width, scr_height))
